@@ -12,10 +12,10 @@
 // iemand in tarieven.json zijn EIGEN prijs in, dan verdwijnt het bereik voor
 // die post - dan is het geen schatting meer.
 //
-// WAT ER NIET IN ZIT: arbeid, transport, montage, keuring, tekenwerk en winst.
-// Het arbeidstarief staat op nul omdat er geen getal voor gevonden is. Een
-// totaal zonder arbeid is een MATERIAALBEGROTING en geen kostprijs, en dat
-// zegt deze code er ook bij - zie `volledig`.
+// DE RAMING (berekenKosten) is een MATERIAALBEGROTING: grondstof, verzinken
+// en coaten, zonder arbeid - zie `volledig`. DE PRIJSINDICATIE
+// (prijsIndicatie) is de kostprijs zoals Marthijn hem opbouwt, met arbeid en
+// logistiek; die staat op de offerte en bovenaan het tabblad Kosten.
 
 import { materiaalVanDeel, magCoaten, dichtheidVan, isVerzinkt } from './materialen.js';
 // DEZELFDE REGEL ALS DE ZAAGLIJST voor "wordt dit gekocht of gemaakt?". Hier
@@ -224,24 +224,65 @@ export function berekenKosten(onderdelen, opties = {}) {
     };
 }
 
+/** De lengte van een onderdeel zoals het gezaagd wordt. */
+const lengteVan = (deel) => deel.zaaglengte !== undefined ? deel.zaaglengte
+    : deel[{ x: 'dx', y: 'dy', z: 'dz' }[deel.lengteAs]] || Math.max(deel.dx, deel.dy, deel.dz);
+
 /**
- * Een PRIJSINDICATIE voor een offerte aan de klant.
+ * Hoeveel METER werk er in zit, voor de arbeid (2 uur per meter, Marthijn).
  *
- * NIET DE KOSTENRAMING HIERBOVEN. Die telt staal als grondstof (een euro per
- * kilo) en laat arbeid weg; dat is een materiaalbegroting, en op een offerte
- * zou dat een fractie van de echte prijs zijn. Hier rekent het staal met de
- * prijs van een AFGEWERKTE constructie - maken inbegrepen, montage niet - uit
- * het blok `controle` in tarieven.json. Daarbij het coaten en wat er besteld
- * wordt. Wat geen tarief heeft komt NIET stil op nul: het staat in `ontbreekt`
- * en de offerte zegt erbij dat het nog niet in de prijs zit.
+ * De handregel(s) zoals ze gezaagd worden: een balustrade van 3 m met 100 mm
+ * overstek aan weerszijden is 3,2 m. Bij een trap daarbij de lengte van de
+ * trap zelf: de trapbomen gedeeld door twee (er zijn er twee per steek). Een
+ * aanname - zie tarieven.json onder _kostprijs.
+ */
+export function meterVoorArbeid(onderdelen) {
+    let regel = 0, boom = 0;
+    // PER EXEMPLAAR, niet per productieonderdeel: een knieregel van dezelfde
+    // buis is hetzelfde productieonderdeel en heet dan "handregel" (zie
+    // onderdelen.js). Zo telde een industriele leuning van 3 m als 6,4 m.
+    for (const o of onderdelen || []) {
+        const exemplaren = o.exemplaren && o.exemplaren.length ? o.exemplaren
+            : Array(o.aantal || 1).fill(o.deel);
+        for (const d of exemplaren) {
+            if (d.soort === 'handregel') regel += lengteVan(d);
+            if (d.soort === 'trapboom' || d.soort === 'bordesboom') boom += lengteVan(d);
+        }
+    }
+    return (regel + boom / 2) / 1000;
+}
+
+/**
+ * Een PRIJSINDICATIE voor een offerte aan de klant: de KOSTPRIJS zoals
+ * Marthijn hem opbouwt (tarieven.json, _kostprijs).
  *
- * @returns { regels: [{ naam, laag, hoog }], laag, hoog, ontbreekt: [], staalKg }
+ *   materiaal   gemeten gewicht x grondstofprijs per metaal
+ *   arbeid      meter x 2 uur x 70 euro
+ *   verzinken   minimaal 200 euro, zwaarder werk per kilo, over het staal
+ *               plus 5% zinkaanwas
+ *   coaten      per m2
+ *   besteld     glas, klemmen, sierpunten enz.
+ *   logistiek   een vaste start per opdracht
+ *
+ * Wat geen tarief heeft komt NIET stil op nul: het staat in `ontbreekt` en
+ * de offerte zegt erbij dat het nog niet in de prijs zit.
+ *
+ * Hiervoor rekende dit met een prijs per kilo voor een AFGEWERKTE
+ * constructie (2,50 - 4,00 euro). Voor de industriele leuning van 3 m gaf dat
+ * 317 - 598 euro; Marthijn: "ongeveer 900". Dat bedrag per kilo blijft in de
+ * kostenraming staan als controle, niet meer op de offerte.
+ *
+ * @returns { regels: [{ naam, laag, hoog }], laag, hoog, ontbreekt: [], staalKg,
+ *            rvsKg, aluminiumKg, meter, uren }
  */
 export function prijsIndicatie(onderdelen) {
     if (!TARIEVEN) throw new Error('De tarieven zijn nog niet ingelezen.');
     const h = hoeveelheden(onderdelen, TARIEVEN.dichtheid.staal);
+    const K = TARIEVEN.kostprijs || {};
+    const p = TARIEVEN.posten;
     const regels = [];
     const ontbreekt = [];
+    const komma = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toString().replace('.', ',');
     const voeg = (naam, post, hoeveelheid) => {
         if (!(hoeveelheid > 0)) return;
         const bereik = bereikVan(post);
@@ -250,19 +291,33 @@ export function prijsIndicatie(onderdelen) {
                       hoog: rond(hoeveelheid * bereik.hoog) });
     };
 
-    voeg(`Staalconstructie, gemaakt (${Math.round(h.staalKg)} kg)`,
-        TARIEVEN.controle, h.staalKg);
-    // RVS en aluminium hebben een eigen prijs per kilo voor een afgewerkte
-    // constructie. Zolang die er niet is staan ze in `ontbreekt`, en zegt de
-    // offerte dat ze nog niet in de prijs zitten - geen stalen prijs op RVS.
-    voeg(`RVS-constructie, gemaakt (${Math.round(h.rvsKg)} kg)`,
-        TARIEVEN.controleRvs, h.rvsKg);
-    voeg(`Aluminium constructie, gemaakt (${Math.round(h.aluminiumKg)} kg)`,
-        TARIEVEN.controleAluminium, h.aluminiumKg);
-    voeg(`Thermisch verzinken (${Math.round(h.verzinkKg)} kg)`,
-        TARIEVEN.posten.verzinken, h.verzinkKg);
-    voeg(`Poedercoaten (${h.coatM2.toFixed(1).replace('.', ',')} m²)`,
-        TARIEVEN.posten.coating, h.coatM2);
+    voeg(`Staal, materiaal (${Math.round(h.staalKg)} kg)`, p.staal, h.staalKg);
+    // RVS en aluminium met hun eigen grondstofprijs - geen stalen prijs op RVS.
+    voeg(`RVS-constructie, materiaal (${Math.round(h.rvsKg)} kg)`, p.rvs, h.rvsKg);
+    voeg(`Aluminium constructie, materiaal (${Math.round(h.aluminiumKg)} kg)`, p.aluminium, h.aluminiumKg);
+
+    const meter = meterVoorArbeid(onderdelen);
+    const uren = meter * (Number(K.arbeidUurPerMeter) || 0);
+    voeg(`Arbeid (${komma(meter)} m × ${komma(Number(K.arbeidUurPerMeter) || 0)} uur = ${komma(uren)} uur)`,
+        K.arbeid || p.arbeid, uren);
+
+    // VERZINKEN: het zink maakt het werk zwaarder, en de verzinkerij rekent
+    // over dat gewicht - met een minimum per opdracht.
+    if (h.verzinkKg > 0) {
+        const zinkKg = h.verzinkKg * (1 + (Number(K.zinkAanwas) || 0));
+        const perKg = bereikVan(p.verzinken);
+        const minimum = bereikVan(K.verzinkenMinimum);
+        const naam = `Thermisch verzinken (${Math.round(zinkKg)} kg incl. `
+            + `${Math.round((Number(K.zinkAanwas) || 0) * 100)}% zink`
+            + (minimum ? `, minimaal ${euro(minimum.laag).replace(',00', '')})` : ')');
+        if (!perKg && !minimum) ontbreekt.push(naam);
+        else {
+            regels.push({ naam,
+                laag: rond(Math.max(minimum ? minimum.laag : 0, perKg ? zinkKg * perKg.laag : 0)),
+                hoog: rond(Math.max(minimum ? minimum.hoog : 0, perKg ? zinkKg * perKg.hoog : 0)) });
+        }
+    }
+    voeg(`Poedercoaten (${h.coatM2.toFixed(1).replace('.', ',')} m²)`, p.coating, h.coatM2);
     for (const [soort, aantal] of Object.entries(h.besteld)) {
         const post = TARIEVEN.besteld[soort];
         const naam = post ? post.naam : soort;
@@ -271,6 +326,8 @@ export function prijsIndicatie(onderdelen) {
             ? `${naam} (${hoeveel.toFixed(1).replace('.', ',')} m²)` : `${naam} (${aantal}×)`,
             post, hoeveel);
     }
+    // Eén keer per opdracht, en alleen als er iets te maken is.
+    if (regels.length && K.logistiek) voeg(K.logistiek.naam || 'Logistiek', K.logistiek, 1);
     return {
         regels,
         laag: rond(regels.reduce((s, r) => s + r.laag, 0)),
@@ -279,6 +336,8 @@ export function prijsIndicatie(onderdelen) {
         staalKg: rond(h.staalKg),
         rvsKg: rond(h.rvsKg),
         aluminiumKg: rond(h.aluminiumKg),
+        meter: rond(meter),
+        uren: rond(uren),
     };
 }
 

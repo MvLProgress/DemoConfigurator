@@ -2444,14 +2444,28 @@ async function toonKosten(onderdelen) {
         const kaart = document.createElement('div');
         kaart.className = 'ksKaart';
         const titel = document.createElement('div');
-        titel.textContent = 'Gemaakt en afgewerkt, met arbeid';
+        titel.textContent = 'Kostprijs: materiaal, arbeid, afwerking en logistiek';
         const bedrag = document.createElement('b');
         bedrag.textContent = kosten.bereikTekst(indicatie.laag, indicatie.hoog);
+        // Waar het bedrag uit bestaat, post voor post - zoals op de offerte.
+        const posten = document.createElement('div');
+        posten.className = 'ksPosten';
+        for (const r of indicatie.regels) {
+            const rij = document.createElement('div');
+            const n = document.createElement('span');
+            n.textContent = r.naam;
+            const b = document.createElement('span');
+            b.textContent = kosten.bereikTekst(r.laag, r.hoog);
+            rij.append(n, b);
+            posten.append(rij);
+        }
         const uitleg = document.createElement('div');
         uitleg.className = 'hint';
-        uitleg.textContent = 'Zoals op de offerte. Zonder transport en montage'
+        uitleg.textContent = 'Zoals op de offerte. Arbeid 2 uur per meter leuning à € 70, '
+            + 'verzinken minimaal € 200 (+5% zinkgewicht), logistiek € 150 – 200 (opgave Marthijn). '
+            + 'Zonder montage'
             + (indicatie.ontbreekt.length ? `; nog zonder ${indicatie.ontbreekt.join(', ')}` : '') + '.';
-        kaart.append(titel, bedrag, uitleg);
+        kaart.append(titel, bedrag, posten, uitleg);
         inhoud.append(kaart);
     }
     const sub = document.createElement('div');

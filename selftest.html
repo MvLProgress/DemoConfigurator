@@ -11008,12 +11008,26 @@ try {
         // En zonder RVS-tarief komt hij in "nog niet in de prijs", niet op nul.
         const bdTar = await (await fetch('/tarieven.json')).json();
         const bdLeeg = JSON.parse(JSON.stringify(bdTar));
-        bdLeeg.controleRvs = { ...bdLeeg.controleRvs, laag: 0, hoog: 0, eigen: null };
+        bdLeeg.posten.rvs = { ...bdLeeg.posten.rvs, laag: 0, hoog: 0, eigen: null };
         ks.zetTarieven(bdLeeg);
         const bdZonder = ks.prijsIndicatie(bdTrap.onderdelen);
         ks.zetTarieven(bdTar);
         check('zonder RVS-tarief staat hij onder "nog niet in de prijs"',
             bdZonder.ontbreekt.some(n => /^RVS-constructie/.test(n)), bdZonder.ontbreekt.join(', '));
+        // DE KOSTPRIJS VAN MARTHIJN: materiaal + arbeid (2 uur/m à 70) +
+        // verzinken (min. 200, +5% zink) + logistiek (150-200). Met de hand:
+        // een verzinkte balustrade, handregel L meter -> arbeid 140·L euro.
+        const bdKp = ks.prijsIndicatie((await bouwMod.bouwBalustrade({ ...bdMaten, verzinken: true })).onderdelen);
+        const bdArb = bdKp.regels.find(r => /^Arbeid/.test(r.naam));
+        const bdZn = bdKp.regels.find(r => /^Thermisch verzinken/.test(r.naam));
+        const bdLog = bdKp.regels.find(r => /^Logistieke start/.test(r.naam));
+        check('kostprijs: arbeid = meter handregel × 2 uur × € 70',
+            !!bdArb && bdKp.meter > 0 && Math.abs(bdArb.laag - Math.round(bdKp.meter * 2 * 70 * 100) / 100) < 0.02
+            && bdArb.laag === bdArb.hoog, bdArb ? `${bdKp.meter} m -> ${bdArb.laag}` : 'geen arbeid');
+        check('kostprijs: verzinken minimaal € 200, met 5% zink in het gewicht; logistiek € 150 – 200',
+            !!bdZn && bdZn.laag >= 200 && /incl\. 5% zink/.test(bdZn.naam)
+            && !!bdLog && bdLog.laag === 150 && bdLog.hoog === 200,
+            bdKp.regels.map(r => `${r.naam}: ${r.laag}-${r.hoog}`).join(' | '));
         const bdRaming = ks.berekenKosten(
             (await bouwMod.bouwBalustrade({ ...bdMaten, verzinken: true })).onderdelen);
         check('verzinken staat als eigen post in de raming, met een bron',
@@ -11827,6 +11841,18 @@ try {
         const bqKr = bqAk.ankerKrachten(1e6, 3000, bqAk.plaatVoor('langs', bqVp));
         check('ankers onder de grote plaat: arm 170 mm, twee in trek',
             Math.abs(bqKr.arm - 170) < 1e-9 && bqKr.aantalTrek === 2, JSON.stringify(bqKr));
+        // 2b. DE KOSTPRIJS van deze leuning: Marthijn zegt "ongeveer 900"
+        //     (was 317 - 598 met een prijs per kilo afgewerkt). Arbeid over
+        //     3,2 m handregel - de knieregel is geen extra meter leuning.
+        const bqKs = await win.eval("import('/kosten.js')");
+        await bqKs.laadTarieven();
+        const bqKp = bqKs.prijsIndicatie((await bouwMod.bouwBalustrade({ ...regelsNu.STANDAARD, lengte: 3000,
+            hoogte: 1100, vulling: 'knieregel', staanderProfiel: bqFl, handregelProfiel: bqChs, regelVoor: 1,
+            schoprand: 1, geslotenEind: 1, voetplaatVorm: 'groot', verzinken: true })).onderdelen);
+        check('kostprijs industriële leuning 3 m: rond € 900 (Marthijn), arbeid over 3,2 m',
+            bqKp.laag >= 800 && bqKp.hoog <= 1050 && bqKp.laag < 900 && bqKp.hoog > 900
+            && Math.abs(bqKp.meter - 3.2) < 0.01,
+            `${bqKp.laag} – ${bqKp.hoog}, ${bqKp.meter} m`);
         // 3. DE STUKLIJST noemt de plaat zoals hij is: 10 × 200, lang 160.
         const bqOnd = await win.eval("import('/onderdelen.js')");
         const bqB = bqOnd.beschrijf({ soort: 'voetplaat', dx: 160, dy: 200, dz: 10, lengteAs: 'x', profiel: null });
