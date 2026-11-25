@@ -4346,6 +4346,14 @@ try {
     check('"Balustrade ontwerpen" zet Balustrade open', groepOpen('Balustrade'));
     check('en Trap weer dicht', !groepOpen('Trap'));
 
+    const knopRaam = doc.getElementById('startRaam');
+    check('er is ook een keuze "Raam ontwerpen"',
+        !!knopRaam && /Raam ontwerpen/.test(knopRaam.textContent));
+    start.showModal();
+    knopRaam.click();
+    check('"Raam ontwerpen" sluit het scherm en zet Raam open',
+        !start.open && groepOpen('Raam') && !groepOpen('Balustrade'));
+
     log('\n--- de keuze zet niets vast ---');
     // Dit is het punt: het startscherm is een kortere weg, geen stand waar je
     // in vastzit. Beide tabbladen blijven staan en je kunt gewoon wisselen.

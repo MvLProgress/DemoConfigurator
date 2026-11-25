@@ -1073,7 +1073,7 @@ function kiesStart(naam) {
     // De statusregel meebewegen met de keuze, zodat er staat wat je nú moet
     // doen in plaats van een algemene zin.
     statusEl.textContent = 'Vul de maten in en druk op Genereer '
-        + (naam === 'Trap' ? 'trap' : 'balustrade') + '.';
+        + naam.toLowerCase() + '.';
     // De cursor meteen in het eerste veld van die groep, zodat je kunt typen
     // zonder eerst te klikken.
     const eerste = document.querySelector(
@@ -1088,6 +1088,8 @@ document.getElementById('startTrap')
     .addEventListener('click', () => kiesStart('Trap'));
 document.getElementById('startBalustrade')
     .addEventListener('click', () => kiesStart('Balustrade'));
+document.getElementById('startRaam')
+    .addEventListener('click', () => kiesStart('Raam'));
 // "Of bekijk eerst de voorbeelden": naar de kant-en-klare ontwerpen.
 document.getElementById('startVoorbeelden')?.addEventListener('click', () => {
     startDialoog.close();
