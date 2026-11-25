@@ -21,6 +21,8 @@ import { bouwTrap, trapDelen, wandleuningFout, controleerWentel,
 import { maakVoorbeeld, ruimVoorbeeldOp } from './preview.js';
 import { TREDESOORTEN, tredeSoortVan } from './treden.js';
 import { maakOfferte } from './offerte.js';
+import { bouwRaam, raamDelen } from './build-raam.js';
+import * as raamRegels from './raam-regels.js';
 import { VOORBEELDEN } from './voorbeelden.js';
 import { STANDAARD as TRAP_STANDAARD, berekenTrap, beoordeelTrap,
     valideer as valideerTrap, controleerBordes, trapgat,
@@ -1851,6 +1853,141 @@ trapKnop.addEventListener('click', async () => {
     }
 });
 
+// --- raam ------------------------------------------------------------------
+//
+// Zelfde opbouw als de trap hierboven: velden lezen, het kader Berekend
+// bijwerken, een voorbeeld tekenen tijdens het typen, en bij Genereer het
+// echte model bouwen. De som staat in raam-regels.js, de onderdelen in
+// build-raam.js; hier staat alleen het knopwerk.
+const raamKnop = document.getElementById('genereerRaam');
+const raamFoutEl = document.getElementById('raamFout');
+const RAAM_VELDEN = ['breedte', 'hoogte', 'maxVakBreedte', 'maxVakHoogte', 'glasDikte'];
+for (const naam of RAAM_VELDEN) {
+    document.getElementById('r_' + naam).value = raamRegels.STANDAARD[naam];
+}
+
+// DE PROFIELEN KOMEN UIT DE CATALOGUS, en die wordt pas geladen als het raam
+// voor het eerst gebouwd wordt: het tabblad openen hoort niet te wachten op
+// 2300 profielen. Tot dan rekenen het kader Berekend en het voorbeeld met
+// kaderMaat en roedeMaat uit regels.json - dezelfde 40 en 20, dus dezelfde
+// uitkomst.
+let raamProfielen = { kaderProfiel: null, roedeProfiel: null };
+let raamProfielenGezocht = false;
+async function raamProfielenKlaar() {
+    if (raamProfielenGezocht) return raamProfielen;
+    try {
+        const { basis, versie, info, boom } = await catalogusKlaar();
+        const uitCatalogus = (bestand) => {
+            const rauw = alleProfielen(boom).find(p => p.bestand === bestand);
+            return rauw ? { ...maakVerwijzing(rauw, info, basis, versie), label: rauw.label }
+                        : null;
+        };
+        raamProfielen = {
+            kaderProfiel: uitCatalogus(raamRegels.PROFIELEN.kader),
+            roedeProfiel: uitCatalogus(raamRegels.PROFIELEN.roede),
+        };
+    } catch (err) {
+        // Geen catalogus: dan massieve blokken. Het beeld klopt, het gewicht
+        // niet - en dat staat in regels.json bij _raam.
+        console.error(err);
+    }
+    raamProfielenGezocht = true;
+    return raamProfielen;
+}
+
+/** De raammaten uit het paneel, met de profielen erbij. */
+function raamMaten() {
+    const p = { ...raamRegels.STANDAARD, ...raamProfielen,
+        // Uit het tabblad Afwerking, net als bij trap en balustrade.
+        afwerking: afwerkingEl.value || null,
+        metaal: metaalEl.value,
+        verzinken: verzinkenEl.checked,
+    };
+    for (const naam of RAAM_VELDEN) {
+        p[naam] = Number(document.getElementById('r_' + naam).value);
+    }
+    return p;
+}
+
+/**
+ * Het kader Berekend en de foutmelding bijwerken.
+ * @returns de maten als ze kloppen, anders null
+ */
+function werkRaamBij() {
+    const p = raamMaten();
+    const { raam } = raamDelen(p);
+    const fouten = raamRegels.valideer({ ...p, kader: raam.kader });
+    const zet = (id, tekst) => { document.getElementById(id).textContent = tekst; };
+    if (fouten.length) {
+        raamFoutEl.textContent = fouten.join('\n');
+        raamFoutEl.style.display = 'block';
+        for (const id of ['r_a_vakken', 'r_a_vakmaat', 'r_a_verticaal',
+                          'r_a_horizontaal', 'r_a_ruit']) zet(id, '–');
+        return null;
+    }
+    raamFoutEl.style.display = 'none';
+    // Afronden bij het TONEN, niet bij het rekenen.
+    const een = (v) => v.toLocaleString('nl', { maximumFractionDigits: 1 });
+    const s = raamRegels.GLAS_SPELING;
+    zet('r_a_vakken', `${raam.kolommen} × ${raam.rijen} = ${raam.ruiten}`);
+    zet('r_a_vakmaat', `${een(raam.vakBreedte)} × ${een(raam.vakHoogte)} mm`);
+    zet('r_a_verticaal', String(raam.verticaal));
+    zet('r_a_horizontaal', `${raam.horizontaal} rij(en)`);
+    zet('r_a_ruit', `${een(raam.vakBreedte - 2 * s)} × ${een(raam.vakHoogte - 2 * s)} × ${p.glasDikte} mm`);
+    return p;
+}
+
+for (const naam of RAAM_VELDEN) {
+    document.getElementById('r_' + naam).addEventListener('input', () => {
+        const p = werkRaamBij();
+        if (!p) return;
+        try {
+            toonVoorbeeld(raamDelen(p).delen, 'raam');
+        } catch (err) {
+            // Het voorbeeld is een gemak; Genereer zegt wat er mis is.
+            console.error(err);
+        }
+    });
+}
+werkRaamBij();
+
+raamKnop.addEventListener('click', async () => {
+    raamKnop.disabled = true;
+    try {
+        statusEl.textContent = 'Profielen voor het raam ophalen…';
+        await raamProfielenKlaar();
+        const p = werkRaamBij();
+        if (!p) { statusEl.textContent = 'Controleer de raammaten.'; return; }
+
+        statusEl.textContent = 'Model wordt opgebouwd…';
+        let gebouwd = await bouwRaam(p);
+        // Dezelfde keuring als bij trap en balustrade. Een raam heeft nog geen
+        // verbindingenmodel, dus er komt nu niets uit - maar zo hangt hij er
+        // straks vanzelf aan, en wist hij een oude melding van een vorige bouw.
+        const keuring = await keurEnCorrigeer(gebouwd, async () => bouwRaam(raamMaten()));
+        gebouwd = keuring.gebouwd;
+
+        await toonVorm(gebouwd.shape, 'raam',
+            metAandacht(gebouwd.uiterlijk, gebouwd.delen, keuring.bevindingen),
+            gebouwd.delen);
+        toonStuklijst(gebouwd.stuklijst);
+        toonOnderdelen(gebouwd.onderdelen, gebouwd.boom);
+
+        const r = gebouwd.raam;
+        const een = (v) => v.toLocaleString('nl', { maximumFractionDigits: 1 });
+        statusEl.textContent = `Raam ${p.breedte} × ${p.hoogte} mm — `
+            + `${r.kolommen} × ${r.rijen} vakken van ${een(r.vakBreedte)} × `
+            + `${een(r.vakHoogte)} mm, ${r.ruiten} ruiten.`;
+    } catch (err) {
+        console.error(err);
+        raamFoutEl.textContent = err.message;
+        raamFoutEl.style.display = 'block';
+        statusEl.textContent = 'Bouwen mislukt.';
+    } finally {
+        raamKnop.disabled = false;
+    }
+});
+
 // --- stuklijst -------------------------------------------------------------
 // Wat de werkplaats nodig heeft: welk profiel, welke zaaglengte, hoeveel stuks.
 // De lijst komt uit dezelfde beschrijving als de geometrie, dus hij kan niet
@@ -2103,7 +2240,8 @@ document.getElementById('s_aanbevolen')?.addEventListener('click', () => {
 
 /** De sterktecontroles van het laatst gebouwde model, als rijen in het paneel. */
 export function sterkteNu() {
-    if (laatsteNaam === 'trap' || !laatsteDelen) return null;
+    // Alleen voor balustrades; een trap of raam heeft geen staanders om te rekenen.
+    if (laatsteNaam === 'trap' || laatsteNaam === 'raam' || !laatsteDelen) return null;
     const b = huidigeMaten();
     const hart = (d) => [0, 1, 2].map(i => d.oorsprong[i] + d.xAs[i] * d.dx / 2 + d.yAs[i] * d.dy / 2);
     const staanders = laatsteDelen.filter(d => d.soort === 'staander').map(hart);
@@ -2197,7 +2335,8 @@ function toonSterkte() {
     inhoud.textContent = '';
     // GLAS ZONDER STAANDERS: dan is er geen staander om te rekenen, en "bouw
     // eerst een balustrade" klopt niet - die staat er.
-    if (laatsteDelen && laatsteNaam !== 'trap' && huidigeMaten().vulling === 'glasvrij') {
+    if (laatsteDelen && laatsteNaam !== 'trap' && laatsteNaam !== 'raam'
+        && huidigeMaten().vulling === 'glasvrij') {
         if (leeg) leeg.style.display = 'none';
         const k = document.createElement('div');
         k.className = 'sterkteRij';
@@ -2221,6 +2360,8 @@ function toonSterkte() {
         leeg.style.display = rijen ? 'none' : 'block';
         leeg.textContent = laatsteNaam === 'trap'
             ? 'De sterktecontrole is er alleen voor balustrades, niet voor trappen.'
+            : laatsteNaam === 'raam'
+            ? 'De sterktecontrole is er alleen voor balustrades, niet voor ramen.'
             : 'Bouw eerst een balustrade; dan staan hier de controles.';
     }
     if (!rijen) return;
@@ -2972,6 +3113,23 @@ function offerteKeuzes() {
         ...(gebouwd('eindkap') ? [['Eindkappen', 'op de open buiseinden']] : []),
         ...(gebouwd('muurplaat') ? [['Uiteinden', 'tegen de muur, met muurplaat Ø100']] : []),
     ];
+
+    // EEN RAAM vóór de balustrade, want hieronder geldt alles wat geen trap
+    // is als balustrade.
+    if (laatsteNaam === 'raam') {
+        const r = raamMaten();
+        const { raam } = raamDelen(r);
+        return [
+            ['Soort', 'Stalen raam'],
+            ['Breedte', mm(r.breedte)], ['Hoogte', mm(r.hoogte)],
+            ['Indeling', `${raam.kolommen} × ${raam.rijen} vakken`],
+            ['Kader', profielNaam(r.kaderProfiel, `${raam.kader} × ${raam.kader}`)],
+            ['Roeden', profielNaam(r.roedeProfiel, `${raam.roede} × ${raam.roede}`)],
+            ['Glas', `${r.glasDikte} mm`],
+            ['Materiaal', metaal],
+            ['Afwerking', afwerking],
+        ];
+    }
 
     if (laatsteNaam !== 'trap') {
         return [
@@ -4140,6 +4298,7 @@ document.getElementById('k_maak').addEventListener('click', () => {
 
 /** De naam van wat er in beeld staat, voor een titelblok zonder omschrijving. */
 function standaardOmschrijving() {
+    if (laatsteNaam === 'raam') return 'Stalen raam';
     if (laatsteNaam !== 'trap') return 'Balustrade';
     return { recht: 'Trap', kwartslag: 'Kwartslagtrap', halfslag: 'Halfslagtrap',
              wentel: 'Wenteltrap' }[document.getElementById('t_soort').value] || 'Trap';

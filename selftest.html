@@ -11737,9 +11737,9 @@ try {
             zichtbaar('p_spijlBreedte') && zichtbaar('p_spijlOverstek') && !zichtbaar('p_knieregelHoogte'));
         zet(bpOud);
         // MINDER TABBLADEN: de tekening hoort bij wat je eruit haalt, de zin
-        // bij de andere snelle start. Elf werd negen.
-        check('9 tabbladen: Tekening staat onder Resultaat, de zin onder Voorbeelden',
-            doc.querySelectorAll('#tabs .tabknop').length === 9
+        // bij de andere snelle start. Elf werd negen; met Raam erbij tien.
+        check('10 tabbladen: Tekening staat onder Resultaat, de zin onder Voorbeelden',
+            doc.querySelectorAll('#tabs .tabknop').length === 10
             && doc.getElementById('k_maak').closest('details.groep').dataset.icoon === 'resultaat'
             && doc.getElementById('chatInvoer').closest('details.groep').dataset.icoon === 'voorbeeld',
             [...doc.querySelectorAll('#tabs .tabknop')].map(t => t.textContent.trim()).join('|'));
@@ -12359,6 +12359,96 @@ try {
         check('het paneel toont het trapgat',
             /^\d+ × \d+ mm$|^rond/.test(doc.getElementById('t_a_trapgat').textContent),
             doc.getElementById('t_a_trapgat').textContent);
+    }
+
+    // ======================= RAAM =======================================
+    //
+    // Een stalen raam: kader, roeden en glas. Eerst de som tegen de
+    // ijkpunten in regels.json, dan de onderdelenlijst, dan de knop.
+    {
+        log('\n--- raam ---');
+        const rr = await win.eval("import('/raam-regels.js')");
+        const { raamDelen } = await win.eval("import('/build-raam.js')");
+
+        for (const ij of rr.IJKPUNTEN) {
+            const v = rr.verdeel(ij.maat, ij.kader, ij.roede, ij.maxVak);
+            check(`raam ijkpunt ${ij.maat} mm, vak hoogstens ${ij.maxVak}`,
+                v.roeden === ij.roeden && Math.abs(v.vak - ij.vak) < 1e-5,
+                `${v.roeden} roeden, vak ${v.vak}`);
+        }
+        // Het vangnet zelf: geen enkele maat geeft een vak dat te groot is.
+        let rTeGroot = 0;
+        for (let maat = 300; maat <= 4000; maat += 7) {
+            for (const maxVak of [150, 333, 400, 1000]) {
+                if (rr.verdeel(maat, 40, 20, maxVak).vak > maxVak + 1e-9) rTeGroot++;
+            }
+        }
+        check('raam: geen vak groter dan toegestaan, 300-4000 mm', rTeGroot === 0, rTeGroot);
+
+        // De standaard: 1200 × 1500, vakken hoogstens 400 × 500 -> 3 × 3.
+        const rP = { ...rr.STANDAARD, kaderProfiel: null, roedeProfiel: null };
+        const { delen: rD, raam: rR } = raamDelen(rP);
+        const tel = (s) => rD.filter(d => d.soort === s).length;
+        check('raam 1200 × 1500: 3 × 3 vakken', rR.kolommen === 3 && rR.rijen === 3,
+            `${rR.kolommen} × ${rR.rijen}`);
+        check('raam: 2 stijlen, 2 dorpels, 2 staande + 6 liggende roeden, 9 ruiten',
+            tel('stijl') === 2 && tel('dorpel') === 2 && tel('roede') === 8 && tel('ruit') === 9,
+            ['stijl', 'dorpel', 'roede', 'ruit'].map(s => `${s} ${tel(s)}`).join(', '));
+        // Alles binnen de buitenmaat, en het kader IS de buitenmaat.
+        const rDoos = (d) => [0, 1, 2].map(i => [d.oorsprong[i],
+            d.oorsprong[i] + [d.dx, d.dy, d.dz][i]]);
+        const rMin = [0, 1, 2].map(i => Math.min(...rD.map(d => rDoos(d)[i][0])));
+        const rMax = [0, 1, 2].map(i => Math.max(...rD.map(d => rDoos(d)[i][1])));
+        check('raam: precies 1200 breed en 1500 hoog',
+            rMin[0] === 0 && rMin[2] === 0 && Math.abs(rMax[0] - 1200) < 1e-9
+            && Math.abs(rMax[2] - 1500) < 1e-9, `${rMin} .. ${rMax}`);
+        // Geen twee stukken op dezelfde plek: geen staal door staal, en geen
+        // glas door staal. Twee dozen die alleen een vlak delen tellen niet.
+        const overlap = (a, b) => rDoos(a).every(([a0, a1], i) => {
+            const [b0, b1] = rDoos(b)[i];
+            return Math.min(a1, b1) - Math.max(a0, b0) > 1e-6;
+        });
+        const rBotsing = [];
+        for (let i = 0; i < rD.length; i++) {
+            for (let j = i + 1; j < rD.length; j++) {
+                if (overlap(rD[i], rD[j])) rBotsing.push(`${rD[i].soort}#${i} × ${rD[j].soort}#${j}`);
+            }
+        }
+        check('raam: geen onderdelen door elkaar', rBotsing.length === 0, rBotsing.slice(0, 4).join(', '));
+        check('raam: de ruit is van glas en 3 mm per kant kleiner dan het vak',
+            rD.filter(d => d.soort === 'ruit').every(d => d.materiaal === 'glas'
+                && Math.abs(d.dx - (rR.vakBreedte - 6)) < 1e-9
+                && Math.abs(d.dz - (rR.vakHoogte - 6)) < 1e-9));
+        check('raam: ongeldige maten worden geweigerd',
+            rr.valideer({ ...rP, breedte: 50, kader: 40 }).length > 0
+            && rr.valideer({ ...rP, kader: 40 }).length === 0);
+
+        // De knop, met de echte profielen uit de catalogus.
+        const rStatus = doc.getElementById('status');
+        const rVoor = errors.length;
+        rStatus.textContent = '';
+        doc.getElementById('genereerRaam').click();
+        for (let i = 0; i < 40000 && !/^Raam \d|mislukt/.test(rStatus.textContent); i++) {
+            await sleep(25);
+        }
+        log('status    :', rStatus.textContent);
+        check('de knop Genereer raam levert een raam op',
+            /^Raam 1200 × 1500 mm — 3 × 3 vakken/.test(rStatus.textContent), rStatus.textContent);
+        check('raam bouwen gaf geen fouten in de console',
+            errors.length === rVoor, errors.slice(rVoor).join(' | '));
+        const rTabel = doc.getElementById('stuklijstTabel').textContent;
+        check('de stuklijst noemt het kaderprofiel, de roede en de ruit',
+            /HQ 40x40x3|SHS 40x40x3/.test(rTabel) && /20x20x2/.test(rTabel) && /ruit/.test(rTabel),
+            rTabel.replace(/\s+/g, ' ').slice(0, 200));
+        // De arbeid van een raam staat niet stil op nul: "2 uur per meter"
+        // gaat over leuningen, dus de prijs zegt dat de arbeid nog ontbreekt.
+        const rKosten = doc.getElementById('kostenInhoud');
+        for (let i = 0; i < 400 && !/Arbeid voor het raam/.test(rKosten.textContent); i++) {
+            await sleep(25);
+        }
+        check('Kosten: de arbeid van een raam staat als ontbrekend, niet als nul',
+            /nog zonder[^.]*Arbeid voor het raam/.test(rKosten.textContent),
+            rKosten.textContent.replace(/\s+/g, ' ').slice(0, 200));
     }
 
     log('\n' + (failures === 0

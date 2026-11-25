@@ -16,6 +16,61 @@
     "stagebedrijf. Zie de lijst CONTROLEREN onderaan onshape-ai/balustrade.py."
   ],
 
+  "_raam": [
+    "EEN STALEN RAAM: een kader van vier kokers, roeden die het glas in vakken",
+    "verdelen, en een ruit per vak. Gelezen door raam-regels.js.",
+    "",
+    "Dezelfde gedachte als bij de spijlen van een balustrade. Je geeft de",
+    "BUITENMAAT op; hoeveel roeden er komen volgt uit de grootste vakmaat die",
+    "je toestaat. n roeden geven n+1 vakken, dus:",
+    "    vak = (binnenmaat - n * roede) / (n + 1)",
+    "    n   = ceil((binnenmaat - maxVak) / (maxVak + roede)), minstens 0",
+    "Naar BOVEN afronden, zodat een vak nooit groter wordt dan toegestaan.",
+    "",
+    "profielen: een pad in de profielcatalogus (zoals in een gedeelde link).",
+    "Kader HQ 40x40x3 en roede HQ 20x20x2, koudgevormd (EN 10219-2). Is de",
+    "catalogus niet te laden, dan worden kader en roede een massief blok van",
+    "kaderMaat en roedeMaat - het beeld klopt dan, het gewicht niet.",
+    "",
+    "glasSpeling: de ruit is aan elke kant zoveel kleiner dan het vak. Een ruit",
+    "die precies in het gat past krijg je er niet in.",
+    "",
+    "PLAATSHOUDERS: de vakmaten en glasdikte zijn keuzes voor een stalen",
+    "binnenraam in steel-look, niet getoetst aan een norm (NEN 2608 voor glas,",
+    "NEN 3569 voor veiligheidsglas) of aan een leverancier."
+  ],
+
+  "raam": {
+    "standaard": {
+      "breedte": 1200,
+      "hoogte": 1500,
+      "maxVakBreedte": 400,
+      "maxVakHoogte": 500,
+      "glasDikte": 10,
+      "kaderMaat": 40,
+      "roedeMaat": 20
+    },
+    "glasSpeling": 3,
+    "profielen": {
+      "kader": "DIN_EN_10219-2_HQ/HQ_40x40x3_EN_10219-2.stp",
+      "roede": "DIN_EN_10219-2_HQ/HQ_20x20x2_EN_10219-2.stp"
+    },
+    "grenzen": {
+      "breedte": [300, 4000],
+      "hoogte": [300, 3500],
+      "maxVakBreedte": [100, 2000],
+      "maxVakHoogte": [100, 2000],
+      "glasDikte": [4, 40]
+    },
+    "ijkpunten": [
+      { "maat": 1200, "kader": 40, "roede": 20, "maxVak": 400, "roeden": 2, "vak": 360 },
+      { "maat": 900,  "kader": 40, "roede": 20, "maxVak": 400, "roeden": 1, "vak": 400 },
+      { "maat": 480,  "kader": 40, "roede": 20, "maxVak": 400, "roeden": 0, "vak": 400 },
+      { "maat": 481,  "kader": 40, "roede": 20, "maxVak": 400, "roeden": 1, "vak": 190.5 },
+      { "maat": 2080, "kader": 40, "roede": 20, "maxVak": 300, "roeden": 6, "vak": 268.571429 }
+    ]
+  },
+
   "_trap": [
     "Een rechte steektrap: van vloer naar vloer, in een rechte lijn.",
     "",

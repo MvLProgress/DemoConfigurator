@@ -117,6 +117,8 @@ dezelfde topologie en randlengtes geeft als de lange.
 | `balustrade-rules.js` | de rekenregels: hoeveel spijlen, welke afstand |
 | `trap-regels.js` | de trapregels: optrede, aantrede, loopregel |
 | `build-trap.js` | OCCT: trap bouwen, met leuning erbij |
+| `raam-regels.js` | de raamregels: hoeveel roeden, welke vakmaat |
+| `build-raam.js` | OCCT: stalen raam bouwen — kader, roeden, glas |
 | `pad.js` | randen aaneenrijgen tot een pad, hoeken, hellingen, verschuiven |
 | `build-balustrade.js` | OCCT: blok en balustrade bouwen, op een rand plaatsen |
 | `command-parser.js` | Nederlandse zin -> parameters |

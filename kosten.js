@@ -300,6 +300,13 @@ export function prijsIndicatie(onderdelen) {
     const uren = meter * (Number(K.arbeidUurPerMeter) || 0);
     voeg(`Arbeid (${komma(meter)} m × ${komma(Number(K.arbeidUurPerMeter) || 0)} uur = ${komma(uren)} uur)`,
         K.arbeid || p.arbeid, uren);
+    // EEN RAAM HEEFT GEEN LEUNINGMETERS. De regel "2 uur per meter" gaat over
+    // leuningen; voor een raam is er nog geen opgave. Dan hoort de arbeid niet
+    // stil op nul te staan - dat zou een raam veel te goedkoop maken - maar
+    // in `ontbreekt`, zodat de offerte zegt dat hij nog niet in de prijs zit.
+    const heeftRaam = (onderdelen || []).some(o => o.deel
+        && (o.deel.soort === 'stijl' || o.deel.soort === 'dorpel'));
+    if (heeftRaam) ontbreekt.push('Arbeid voor het raam (nog geen uren per raam opgegeven)');
 
     // VERZINKEN: het zink maakt het werk zwaarder, en de verzinkerij rekent
     // over dat gewicht - met een minimum per opdracht.
